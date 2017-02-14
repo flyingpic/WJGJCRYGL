@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+   <WS>
+      <SERVICE NAME="#EAIOS_JYXX" XLH="#XLH#">
+        <INPARAM>
+          <DWBM TYPE="STRING">#DWBM#</DWBM>
+           <ZJHM TYPE="STRING">#ZJHM#</ZJHM>
+        </INPARAM>
+     </SERVICE>
+   </WS>

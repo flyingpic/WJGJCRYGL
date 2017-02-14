@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+        <color name="spots_dialog_color">@android:color/holo_blue_dark</color>
+        <color name="theme_551AA73A">#551AA73A</color>
+        <color name="ffffff">#ffffff</color>
+        <color name="theme_000000">#000000</color>
+        <color name="theme_55222222">#55222222</color>
+        <color name="theme_title_color">#E64B3B</color>
+        <color name="activity_main_background">#eeeeee</color>
+        <color name="theme_22cdcdcd">#22cdcdcd</color>
+        <color name="theme_22000000">#55000000</color>
+        <color name="theme_00000000">#00000000</color>
+          <color name="theme_btn_bg">#A4B35E</color>
+        <color name="theme_bg_cancel">#C6C6C6</color>
+        <color name="theme_bg_cancel_press">#55C6C6C6</color>
+        <color name="theme_bg_confirm">#903333</color>
+        <color name="theme_bg_confirm_press">#95503333</color>
+        <color name="white">#ffffffff</color>
+        <color name="lightblack">#ff202020</color>
+        <color name="red">#FF0000</color>
+</resources>

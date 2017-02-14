@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">武警岗进出人员管理</string>
+    <string name="hello_world">Hello world!</string>
+    <string name="name">姓名：</string>
+    <string name="zhiwu">职务：</string>
+
+</resources>
