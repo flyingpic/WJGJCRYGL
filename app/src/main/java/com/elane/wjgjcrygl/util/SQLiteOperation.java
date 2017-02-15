@@ -16,9 +16,11 @@ import android.util.Log;
 
 import com.elane.wjgjcrygl.Global;
 import com.elane.wjgjcrygl.MyApplication;
-import com.elane.wjgjcrygl.model.PersonInfo;
+import com.elane.wjgjcrygl.model.OfficerInfo;
 
 public class SQLiteOperation extends SQLiteOpenHelper {
+
+	private final static String TAG = "SQLiteOperation";
 
 	public SQLiteOperation(Context context, String name, CursorFactory factory,
 						   int version) {
@@ -36,7 +38,10 @@ public class SQLiteOperation extends SQLiteOpenHelper {
 				+" ZJHM varchar(50) PRIMARY KEY,"
 				+ "JOB varchar(30),"
 				+ "XM varchar(30),"
-				+ "ZPSJ BLOB"
+				+ "ZPSJ BLOB,"
+				+ "DWBM varchar(30),"
+				+ "DWMC varchar(30),"
+				+ "XBMC varchar(10)"
 				+")"
 		);
 	}
@@ -49,9 +54,10 @@ public class SQLiteOperation extends SQLiteOpenHelper {
 	}
 
 	/**根据证件号码查询人员是否存在*/
-	public static PersonInfo selectPersonByID(SQLiteDatabase db, String IDNumber){
-		PersonInfo personInfo = null;
-		String sql = "SELECT * FROM " + Global.TABLE_NAME_PERSION_INFO +" where ZJHM = '"+IDNumber;
+	public static OfficerInfo selectPersonByID(SQLiteDatabase db, String IDNumber){
+		OfficerInfo officerInfo = null;
+		String sql = "SELECT * FROM " + Global.TABLE_NAME_PERSION_INFO +" where ZJHM = '"+IDNumber+"'";
+		Log.d(TAG, "查询人员信息："+sql);
 		Cursor cursor = null;
 		try {
 			cursor = db.rawQuery(sql, null);
@@ -65,12 +71,12 @@ public class SQLiteOperation extends SQLiteOpenHelper {
 				zpsj = cursor.getBlob(cursor.getColumnIndex("ZPSJ"));
 				job = cursor.getString(cursor.getColumnIndex("JOB"));
 
-				personInfo = new PersonInfo();
+				officerInfo = new OfficerInfo();
 
-				personInfo.setXm(xm);
-				personInfo.setJob(job);
-				personInfo.setZjhm(zjhm);
-				personInfo.setZpsj(zpsj);
+				officerInfo.xm = xm;
+				officerInfo.job = job;
+				officerInfo.zjhm = zjhm;
+				officerInfo.zpsj = ImageUtil.byteArray2Str(zpsj);
 
 			}
 		} catch (Exception e) {
@@ -80,21 +86,26 @@ public class SQLiteOperation extends SQLiteOpenHelper {
 				cursor.close();
 			}
 		}
-		return personInfo;
+		if(officerInfo==null){
+			Log.d(TAG, "本地未查询到人员信息");
+		}else{
+			Log.d(TAG, "本地查询到人员信息："+officerInfo.toString());
+		}
+		return officerInfo;
 	}
 
 
 	/**
 	 * 更新人员信息
 	 * @param db
-	 * @param personInfo
+	 * @param officerInfo
 	 */
-	public static void replacePersonInfo(SQLiteDatabase db, PersonInfo personInfo){
-		if(personInfo == null){
+	public static void replacePersonInfo(SQLiteDatabase db, OfficerInfo officerInfo){
+		if(officerInfo == null){
 			return;
 		}
-		String sql = "REPLACE INTO " +Global.TABLE_NAME_PERSION_INFO + "(ZJHM,XM,JOB,ZPSJ) VALUE ('"
-				+personInfo.getZjhm()+"','"+personInfo.getXm()+"','"+personInfo.getJob()+"','"+personInfo.getZpsj()+"')";
+		String sql = "REPLACE INTO " +Global.TABLE_NAME_PERSION_INFO + "(ZJHM,XM,JOB,ZPSJ,DWBM,DWMC,XBMC) VALUES ('"
+				+officerInfo.zjhm+"','"+officerInfo.xm+"','"+officerInfo.job+"','"+officerInfo.zpsj+"','"+officerInfo.jsbh+"','"+officerInfo.dwmc+"','"+officerInfo.xb+"')";
 		Log.d("SQLiteOperation", "insert or update sql:"+sql);
 		try {
 			db.execSQL(sql);

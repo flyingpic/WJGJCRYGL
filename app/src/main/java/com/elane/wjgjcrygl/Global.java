@@ -23,7 +23,7 @@ public class Global {
 	public static String oracle_password = "ECMIS@WJG";//oracle数据库密�?  ecmis_i.it
 	public static String servlet_url = "http://192.168.4.41:8888/web.iit/servlet/ABDoorServlet";  //http://10.155.22.236:8080/web.iit/servlet/ABDoorServlet
 
-	public static String FingerprintUrl = "http://192.168.4.236:8732/XMLFingerprintMatch/FingerprintMatch/?wsdl";
+	public static String FingerprintUrl = "http://192.168.4.237:8732/XMLFingerprintMatch/FingerprintMatch/?wsdl";
 	public static String FingerprintUserName = "520000111";  //指纹匹配用户�?   500105111
 	public static String FingerprintPassWord = "Vs7alZLAMps=";  //指纹匹配密码  31AbRLiuIRlmnN2X9JYI4A==
 	

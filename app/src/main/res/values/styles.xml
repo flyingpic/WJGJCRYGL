@@ -10,8 +10,8 @@
             Theme customizations available in newer API levels can go in
             res/values-vXX/styles.xml, while customizations related to
             backward-compatibility can go here.
-
         -->
+
     </style>
 
     <!-- Application theme. -->
@@ -19,10 +19,11 @@
         <!-- All customizations that are NOT specific to a particular API-level can go here. -->
     </style>
 
-    <style name="SpotsDialogDefault" parent="android:Theme.DeviceDefault.Light.Dialog">
+    <style name="CustomDialogStyle" parent="android:Theme.DeviceDefault.Dialog">
         <item name="DialogTitleAppearance">@android:style/TextAppearance.Medium</item>
-        <item name="DialogTitleText">Loading…</item>
-        <item name="DialogSpotCount">5</item>
+        <item name="DialogTitleText">Updating…</item>
+        <item name="DialogSpotColor">@android:color/holo_orange_dark</item>
+        <item name="DialogSpotCount">4</item>
     </style>
     <!-- ACPLDialog -->
     <style name="ACPLDialog">

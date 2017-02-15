@@ -1,5 +1,6 @@
 package com.elane.wjgjcrygl.retrofit.person_info.response;
 
+import org.simpleframework.xml.Attribute;
 import org.simpleframework.xml.Element;
 import org.simpleframework.xml.Root;
 
@@ -8,5 +9,7 @@ import org.simpleframework.xml.Root;
  */
 @Root(name = "SERVICE")
 public class WebServiceService {
-    @Element(name = "RESULT") public WebServiceResult resultNode;
+
+    @Attribute(name = "NAME",required = false) public String serviceName;
+    @Element(name = "RESULT",required = false) public WebServiceResult resultNode;
 }

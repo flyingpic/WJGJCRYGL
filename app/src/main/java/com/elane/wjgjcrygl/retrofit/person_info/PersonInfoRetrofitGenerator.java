@@ -14,6 +14,7 @@ import okhttp3.Interceptor;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import retrofit2.Retrofit;
+import retrofit2.adapter.rxjava.RxJavaCallAdapterFactory;
 import retrofit2.converter.simplexml.SimpleXmlConverterFactory;
 
 /**
@@ -30,6 +31,7 @@ public class PersonInfoRetrofitGenerator {
 
    private static Retrofit.Builder retrofitBuilder =  new Retrofit.Builder()
             .addConverterFactory(SimpleXmlConverterFactory.create(serializer))
+           .addCallAdapterFactory(RxJavaCallAdapterFactory.create())
             .baseUrl(Global.eudap_wsdl);
 
     public static <S> S createService(Class<S> serviceClass) {

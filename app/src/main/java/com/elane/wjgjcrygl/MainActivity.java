@@ -1,7 +1,9 @@
 package com.elane.wjgjcrygl;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
+import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
@@ -24,24 +26,22 @@ import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.Toast;
 
-import com.elane.wjgjcrygl.model.FingerPrintRequestBody;
+import com.elane.wjgjcrygl.model.OfficerInfo;
 import com.elane.wjgjcrygl.model.Passwords;
-import com.elane.wjgjcrygl.retrofit.finger_compare.FPComparePostXmlRetrofitGenerator;
-import com.elane.wjgjcrygl.retrofit.finger_compare.request.GetZYRYBHFromFingerprint;
-import com.elane.wjgjcrygl.retrofit.finger_compare.request.RequestEnvelope;
-import com.elane.wjgjcrygl.retrofit.finger_compare.response.GetZYRYBHFromFingerprintResponse;
-import com.elane.wjgjcrygl.retrofit.finger_compare.response.ResponseBody;
-import com.elane.wjgjcrygl.retrofit.finger_compare.response.ResponseEnvelope;
 import com.elane.wjgjcrygl.retrofit.person_info.PersonInfoRetrofitGenerator;
+import com.elane.wjgjcrygl.retrofit.person_info.request.RequestEnvelope;
 import com.elane.wjgjcrygl.retrofit.person_info.request.RequestXml;
+import com.elane.wjgjcrygl.retrofit.person_info.response.ResponseEnvelope;
 import com.elane.wjgjcrygl.retrofit.person_info.response.WebServiceResponse;
 import com.elane.wjgjcrygl.retrofit.pwdnetwork.RetrofitGenerator;
+import com.elane.wjgjcrygl.util.SQLiteOperation;
 import com.elane.wjgjcrygl.util.StringUtil;
 import com.elane.wjgjcrygl.util.Ws_Zw;
 import com.elane.wjgjcrygl.view.KeyboardView;
 import com.elane.wjgjcrygl.view.PasswordEditText;
-import com.elane.wjgjcrygl.view.SpotsDialog;
 import com.hongda.Distortion3000;
+
+import org.simpleframework.xml.core.Persister;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -54,6 +54,7 @@ import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
 import butterknife.OnTouch;
+import dmax.dialog.SpotsDialog;
 import okhttp3.FormBody;
 import okhttp3.Request;
 import okhttp3.RequestBody;
@@ -81,19 +82,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 	};
 
 	// 匹配指纹进度框
-	private SpotsDialog loadingDialog;
+	private AlertDialog mLoadingDialog;
 
 	private Context mContext;
 
 	private Camera mCamera;
-	private String imgBase64 = "";
 
 	private boolean isFPMatching = false;
-	private int count = 0; //获取指纹默认值次数
-	private float sum_t = 0;
-	private float avg_t = 0;
 
 	private int rollback2ScreenProtectorTime = 15;// 初始时间
+
+	private SQLiteDatabase mSqLiteDatabase;
 
 	private Subscription screenControlObservable ;
 	private Subscription authenticationObservable;
@@ -130,6 +129,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 		ButterKnife.bind(this);
 
 		mContext = this;
+
+		mSqLiteDatabase = new SQLiteOperation(mContext.getApplicationContext(),"DATABASE",1).getReadableDatabase();
 
 		initViewAddEvent();
 
@@ -208,8 +209,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
 	private void initViewAddEvent() {
 
-		loadingDialog = new SpotsDialog(this);
-		loadingDialog.setMessage("指纹比对中...");
+		mLoadingDialog = new SpotsDialog(mContext,R.style.CustomDialogStyle);
+		mLoadingDialog.setMessage("验证中");
 
 		//设置键盘
 		keyboardView.setKeyboardKeys(KEY);
@@ -270,81 +271,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 		return result;
 	}
 
-	/**
-	 * 比对指纹图片线程
-	 *
-	 * @param data
-	 * @return void
-	 */
-	private void startConvertThread(final byte[] data) {
-		new Thread(new Runnable() {
-			@Override
-			public void run() {
-				//已经有指纹开始比对，直接返回
-				if (isFPMatching) return;
-
-				Bitmap bitmap = null;
-				ByteArrayOutputStream os = null;
-				try {
-
-					final int w = 800; final int h = 600;
-					final YuvImage image = new YuvImage(data, ImageFormat.NV21, w, h, null);
-					os = new ByteArrayOutputStream(data.length);
-
-					//判断预览数据是否能转为图片，否，预览数据无效
-					if (!image.compressToJpeg(new Rect(0, 0, w, h), 100, os)) {
-						return;
-					}
-
-					//预览数据转为Bitmap
-					byte[] tmp = os.toByteArray();
-					bitmap = BitmapFactory.decodeByteArray(tmp, 0, tmp.length);
-					bitmap = Bitmap.createScaledBitmap(bitmap, 256, 360, true);
-					if (bitmap == null) return;
-
-					//将Bitmap转为灰度图，计算白占比
-					float t = Float.valueOf(convertGreyImg(bitmap));
-
-					if (count > 1000) {
-						count = 0;
-						sum_t = 0;
-						avg_t = 0;
-					}
-					count++;
-					sum_t = sum_t + t;
-					avg_t = sum_t / count;
-					Log.d("MainActivity", avg_t + "：" + (100 - ((100 - avg_t) + 6)) + ":" + t);
-
-					//当白占比达到阈值，判定为有效指纹
-					if (t < (100 - ((100 - avg_t) + 6)) || t<69) {
-						isFPMatching = true;//取得指纹，开始比对
-						count = 0;
-						sum_t = 0;
-						avg_t = 0;
-						byte[] bmpBuf = new byte[256 * 360];
-						Distortion3000.InitAB();
-						Distortion3000.ReviseImgDat(bmpBuf, data, 800, 600);
-						if (mCamera != null) {
-							mCamera.stopPreview();
-						}
-
-					}
-				}catch (Exception e){
-					e.printStackTrace();
-				}finally {
-					if(bitmap!=null){
-						bitmap.recycle();
-						try {
-							os.close();
-						} catch (IOException e) {
-							e.printStackTrace();
-						}
-					}
-				}
-			}
-		}).start();
-
-	}
 	int w = 800; int h = 600;
 	byte[] preview_finger_img_data;
 
@@ -352,7 +278,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 	private PreviewCallback previewCallback = new PreviewCallback() {
 		@Override
 		public void onPreviewFrame(byte[] finger_img_data, Camera camera) {
-			Log.d(TAG,"正在预览指纹图像");
+//			Log.d(TAG,"正在预览指纹图像");
 			preview_finger_img_data = finger_img_data;
 		}
 	};
@@ -387,6 +313,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 				.doOnNext(new Action1<Long>() {
 					@Override
 					public void call(Long aLong) {
+						Log.d(TAG, "-------------------------- 当前正在验证 --------------------------------");
 						isFPMatching = true;
 					}
 				})
@@ -396,7 +323,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 					public Boolean call(Long intervalTime) {
 						Log.d(TAG, "filter: 判断预览到的指纹图像数据是否为空");
 						if(preview_finger_img_data ==null){
+							Log.d(TAG, "-------------------------- 预览的指纹数据问题，结束本次验证 --------------------------------");
 							isFPMatching = false;
+							if(mLoadingDialog.isShowing()){
+								mLoadingDialog.dismiss();
+							}
 						}
 						return preview_finger_img_data != null ;
 					}
@@ -415,7 +346,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
 						//判断预览数据是否能转为图片，否，预览数据无效
 						if (!image.compressToJpeg(new Rect(0, 0, w, h), 100, os)) {
+							Log.d(TAG, "-------------------------- 预览的指纹数据问题，结束本次验证1 --------------------------------");
 							isFPMatching = false;
+							if(mLoadingDialog.isShowing()){
+								mLoadingDialog.dismiss();
+							}
 							return null;
 						}
 
@@ -427,7 +362,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 						try {
 							os.close();
 						} catch (Exception e) {
+							Log.d(TAG, "-------------------------- 预览的指纹数据问题，结束本次验证2 --------------------------------");
 							isFPMatching = false;
+							if(mLoadingDialog.isShowing()){
+								mLoadingDialog.dismiss();
+							}
 							e.printStackTrace();
 						}
 
@@ -437,7 +376,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 				.filter(new Func1<Bitmap, Boolean>() {
 					@Override
 					public Boolean call(Bitmap finger_img_bitmap) {
-						if(finger_img_bitmap == null) isFPMatching = false;
+						if(finger_img_bitmap == null){
+							Log.d(TAG, "-------------------------- 预览的指纹数据问题，结束本次验证3 --------------------------------");
+							isFPMatching = false;
+							if(mLoadingDialog.isShowing()){
+								mLoadingDialog.dismiss();
+							}
+						}
 						return finger_img_bitmap != null;
 					}
 				})
@@ -453,21 +398,31 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 				.filter(new Func1<Float, Boolean>() {
 					@Override
 					public Boolean call(Float whiteProportion) {
-						if(whiteProportion>=58) isFPMatching = false;
+						if(whiteProportion>=58){
+							Log.d(TAG, "-------------------------- 白占比高于阈值，结束本次验证 --------------------------------");
+							isFPMatching = false;
+							if(mLoadingDialog.isShowing()){
+								mLoadingDialog.dismiss();
+							}
+						}
 						return whiteProportion<58;
 					}
 				})
+//				.debounce(2,TimeUnit.SECONDS)
 				//停止预览指纹
 				.observeOn(AndroidSchedulers.mainThread())
 				.doOnNext(new Action1<Float>() {
 					@Override
 					public void call(Float whiteProportion) {
-						Log.d(TAG, "call: 正在比对指纹");
+						Log.d(TAG, "-------------------------- 成功获取指纹，开始验证 --------------------------------");
 						isFPMatching = true;
+						if(!mLoadingDialog.isShowing()){
+							mLoadingDialog.show();
+						}
 
-						mCamera.startPreview();
-						mSurfaceView.destroyDrawingCache();
-						mCamera.setPreviewCallback(previewCallback);
+//						mCamera.startPreview();
+//						mSurfaceView.destroyDrawingCache();
+//						mCamera.setPreviewCallback(previewCallback);
 					}
 				})
 				.observeOn(Schedulers.newThread())
@@ -502,36 +457,42 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 					}
 				})
 				// TODO: 2017/1/23 Retrofit请求指纹服务器
-				.flatMap(new Func1<String, Observable<ResponseEnvelope>>() {
-					@Override
-					public Observable<ResponseEnvelope> call(String fingerbmpBase64) {
-						Log.d(TAG, "call: 上传指纹比对");
-						GetZYRYBHFromFingerprint requestContent = new GetZYRYBHFromFingerprint();
-						requestContent.base64imagefinger = fingerbmpBase64;
-						requestContent.username = Global.FingerprintUserName;
-						requestContent.password = Global.FingerprintPassWord;
-
-						com.elane.wjgjcrygl.retrofit.finger_compare.request.RequestBody requestBody = new com.elane.wjgjcrygl.retrofit.finger_compare.request.RequestBody();
-						requestBody.getZYRYBHFromFingerprint = requestContent;
-
-						RequestEnvelope requestEnvelope = new RequestEnvelope();
-						requestEnvelope.requestBodyNode = requestBody;
-
-						FingerPrintRequestBody fingerPrintRequestBody = new FingerPrintRequestBody();
-						fingerPrintRequestBody.setBody("<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" ><s:Body><GetZYRYBHFromFingerprint xmlns=\"http://tempuri.org/\"><base64imagefinger>"
-								+fingerbmpBase64+"</base64imagefinger><username>"+Global.FingerprintUserName+"</username><password>"+Global.FingerprintPassWord+"</password></GetZYRYBHFromFingerprint></s:Body></s:Envelope>");
-
+//				.flatMap(new Func1<String, Observable<ResponseEnvelope>>() {
+//					@Override
+//					public Observable<ResponseEnvelope> call(String fingerbmpBase64) {
+//						Log.d(TAG, "call: 上传指纹比对");
+//						GetZYRYBHFromFingerprint requestContent = new GetZYRYBHFromFingerprint();
+//						requestContent.base64imagefinger = fingerbmpBase64;
+//						requestContent.username = Global.FingerprintUserName;
+//						requestContent.password = Global.FingerprintPassWord;
+//
+//						com.elane.wjgjcrygl.retrofit.finger_compare.request.RequestBody requestBody = new com.elane.wjgjcrygl.retrofit.finger_compare.request.RequestBody();
+//						requestBody.getZYRYBHFromFingerprint = requestContent;
+//
+//						RequestEnvelope requestEnvelope = new RequestEnvelope();
+//						requestEnvelope.requestBodyNode = requestBody;
+//
+//						FingerPrintRequestBody fingerPrintRequestBody = new FingerPrintRequestBody();
+//						fingerPrintRequestBody.setBody("<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" ><s:Body><GetZYRYBHFromFingerprint xmlns=\"http://tempuri.org/\"><base64imagefinger>"
+//								+fingerbmpBase64+"</base64imagefinger><username>"+Global.FingerprintUserName+"</username><password>"+Global.FingerprintPassWord+"</password></GetZYRYBHFromFingerprint></s:Body></s:Envelope>");
+//
 //						return FPCompareRetrofitGenerator.getWebserviceInterfaceApi().webserviceRequest(requestEnvelope);
-						return FPComparePostXmlRetrofitGenerator.getWebserviceInterfaceApi().webserviceRequest(fingerPrintRequestBody);
-					}
-				})
-				.map(new Func1<ResponseEnvelope,String>() {
+////						return FPComparePostXmlRetrofitGenerator.getWebserviceInterfaceApi().webserviceRequest(fingerPrintRequestBody);
+//					}
+//				})
+//				.map(new Func1<ResponseEnvelope,String>() {
+//					@Override
+//					public String call(ResponseEnvelope responseEnvelope) {
+//						ResponseBody body = responseEnvelope.body;
+//						GetZYRYBHFromFingerprintResponse response = body.getZYRYBHFromFingerprintResponse;
+//						Log.d(TAG, "call: 解析响应"+response.GetZYRYBHFromFingerprintResult);
+//						return response.GetZYRYBHFromFingerprintResult;
+//					}
+//				})
+				.map(new Func1<String, String>() {
 					@Override
-					public String call(ResponseEnvelope responseEnvelope) {
-						ResponseBody body = responseEnvelope.body;
-						GetZYRYBHFromFingerprintResponse response = body.getZYRYBHFromFingerprintResponse;
-						Log.d(TAG, "call: 解析响应"+response.GetZYRYBHFromFingerprintResult);
-						return response.GetZYRYBHFromFingerprintResult;
+					public String call(String s) {
+						return "444";
 					}
 				})
 				.observeOn(AndroidSchedulers.mainThread())
@@ -539,92 +500,320 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 					@Override
 					public Boolean call(String fingerCompareResult) {
 						Log.d(TAG, "call: 判断指纹比对是否成功");
-						//指纹比对失败
+
 						if(fingerCompareResult!=null && !fingerCompareResult.equals("")&& !fingerCompareResult.contains("-")){
 							Toast.makeText(mContext.getApplicationContext(), "指纹比对成功", Toast.LENGTH_SHORT).show();
-							try{
-								mCamera.startPreview();
-								mSurfaceView.destroyDrawingCache();
-								mCamera.setPreviewCallback(previewCallback);
-							}catch (Exception e){
-								e.printStackTrace();
-							}
+//							try{
+//								mCamera.startPreview();
+//								mSurfaceView.destroyDrawingCache();
+//								mCamera.setPreviewCallback(previewCallback);
+//							}catch (Exception e){
+//								e.printStackTrace();
+//							}
 
 							return true;
 						}else{
 							Toast.makeText(mContext.getApplicationContext(), "指纹比对失败，错误信息："+fingerCompareResult, Toast.LENGTH_SHORT).show();
 						}
 						Log.d(TAG, "call: 重新预览指纹");
-						try{
-							mCamera.startPreview();
-							mSurfaceView.destroyDrawingCache();
-							mCamera.setPreviewCallback(previewCallback);
-						}catch (Exception e){
-							e.printStackTrace();
-						}
-
+//						try{
+//							mCamera.startPreview();
+//							mSurfaceView.destroyDrawingCache();
+//							mCamera.setPreviewCallback(previewCallback);
+//						}catch (Exception e){
+//							e.printStackTrace();
+//						}
+						Log.d(TAG, "-------------------------- 指纹比对失败，本次验证停止 --------------------------------");
 						isFPMatching = false;
+						if(mLoadingDialog.isShowing()){
+							mLoadingDialog.dismiss();
+						}
 						return false;
 					}
 				})
 				.observeOn(Schedulers.newThread())
-				//获取人员信息
-				.flatMap(new Func1<String, Observable<com.elane.wjgjcrygl.retrofit.person_info.response.ResponseEnvelope>>() {
+				//查询本地是否有该人员信息
+				.map(new Func1<String, Object>() {
 					@Override
-					public Observable<com.elane.wjgjcrygl.retrofit.person_info.response.ResponseEnvelope> call(String zjhm) {
+					public Object call(String id) {
+						OfficerInfo officerInfo = null;
+						try{
+							officerInfo = SQLiteOperation.selectPersonByID(mSqLiteDatabase,id);
+						}catch (Exception e){
+							e.printStackTrace();
+						}
+						if(officerInfo == null){
+							return id;
+						}else{
+							return officerInfo;
+						}
+					}
+				})
+				//判断使用本地数据还是网络获取
+				.flatMap(new Func1<Object, Observable<OfficerInfo>>() {
+					@Override
+					public Observable<OfficerInfo> call(Object object) {
+						if(object instanceof String){
+							String id = (String) object;
+							return getOperatorOfficerDatafromNetObservable(id);
+						}else{
+							return getOfficerDataObservable((OfficerInfo) object);
+						}
+					}
+				})
+				//Retrofit2 Webservice Request officer data
+//				.flatMap(new Func1<String, Observable<ResponseEnvelope>>() {
+//					@Override
+//					public Observable<ResponseEnvelope> call(String zjhm) {
+//
+//						Log.d(TAG, "网络获取人员信息");
+//
+//						RequestXml requestXml = new RequestXml();
+//						requestXml.xml = "<WS><SERVICE NAME=\"#EAIOS_JYXX\" XLH=\"K2zMnha3X2IbU9j+puXZI4SmZwNw==\"><INPARAM><DWBM TYPE=\"STRING\">520000111</DWBM><ZJHM TYPE=\"STRING\">123456789123456789</ZJHM></INPARAM></SERVICE></WS>";
+//
+//						com.elane.wjgjcrygl.retrofit.person_info.request.RequestBody requestbody = new com.elane.wjgjcrygl.retrofit.person_info.request.RequestBody();
+//						requestbody.requestXml = requestXml;
+//
+//						RequestEnvelope requestEnvelope = new RequestEnvelope();
+//						requestEnvelope.requestBodyNode = requestbody;
+//
+//						return PersonInfoRetrofitGenerator.getWebserviceInterfaceApi().webRequestPersonInfo(requestEnvelope);
+//					}
+//				})
+//				//Gain Webservice Response
+//				.map(new Func1<ResponseEnvelope, String>() {
+//					@Override
+//					public String call(ResponseEnvelope response) {
+//
+//						ResponseEnvelope responseEnvelope = response;
+//						String result = responseEnvelope.body.returnNode.result;
+//
+//						// TODO: 2017/2/14 类型转换错误
+//						/***
+//						 * Error: org.simpleframework.xml.core.ValueRequiredException: Unable to satisfy @org.simpleframework.xml.Element(data=false, name=SERVICE, required=true, type=void) on field 'serviceNode' public com.elane.wjgjcrygl.retrofit.person_info.response.WebServiceService com.elane.wjgjcrygl.retrofit.person_info.response.WebServiceResponse.serviceNode for class com.elane.wjgjcrygl.retrofit.person_info.response.WebServiceResponse at line 1
+//						 * 这里暂时手动解析
+//						 */
+//
+//						Log.d(TAG, "得到人员信息响应:"+result.toString());
+//						return result.toString();
+//					}
+//				})
+//				//解析Officer Data xml Response
+//				.map(new Func1<String, OfficerInfo>() {
+//					@Override
+//					public OfficerInfo call(String responseXml) {
+//						OfficerInfo officerInfo = null;
+//						Persister persister = new Persister();
+//
+//						try {
+//							WebServiceResponse response = persister.read(WebServiceResponse.class,responseXml);
+//							officerInfo = response.serviceNode.resultNode.dataNode;
+//						} catch (Exception e) {
+//							e.printStackTrace();
+//							authenticationSubscriber.onError(e);
+//						}
+//						if(officerInfo==null){
+//							Log.d(TAG, "解析人员信息失败");
+//						}else{
+//							Log.d(TAG, "解析得到人员信息："+officerInfo.toString());
+//						}
+//
+//						return officerInfo;
+//					}
+//				})
+//				//信息缓存到本地
+//				.doOnNext(new Action1<OfficerInfo>() {
+//					@Override
+//					public void call(OfficerInfo officerInfo) {
+//						SQLiteOperation.replacePersonInfo(mSqLiteDatabase,officerInfo);
+//					}
+//				})
+//		// 从本地或网络获取人员信息
+//				.flatMap(new Func1<String, Observable<OfficerInfo>>() {
+//					@Override
+//					public Observable<OfficerInfo> call(String id) {
+//						Log.d(TAG, "Observable.concat");
+//						return Observable.concat(getOperatorOfficerDatafromDBObservable(id),getOperatorOfficerDatafromNetObservable(id),getEmptyOfficerObservable());
+//					}
+//				})
+//				.first(new Func1<OfficerInfo, Boolean>() {
+//					@Override
+//					public Boolean call(OfficerInfo officerInfo) {
+//						return officerInfo!=null;
+//					}
+//				})
+				.filter(new Func1<OfficerInfo, Boolean>() {
+					@Override
+					public Boolean call(OfficerInfo officerInfo) {
+						if(officerInfo != null && officerInfo.zjhm!=null && !officerInfo.zjhm.equals("")){
+							return true;
+						}
+						Log.d(TAG, "-------------------------- 通过该证件号码查询人员信息失败，本次验证结束 --------------------------------");
+						isFPMatching = false;
+						if(mLoadingDialog.isShowing()){
+							mLoadingDialog.dismiss();
+						}
+						Toast.makeText(mContext, "无人员信息", Toast.LENGTH_SHORT).show();
+//						authenticationSubscriber.onCompleted();
+						return false;
+					}
+				})
+//				.map(new Func1<OfficerInfo, String>() {
+//					@Override
+//					public String call(OfficerInfo officerInfo) {
+//						return officerInfo.xm;
+//					}
+//				})
+				.observeOn(AndroidSchedulers.mainThread())
+				.subscribe(authenticationSubscriber);
 
-						Log.d(TAG, "call: 开始获取人员信息");
-						
+	}
+
+	private Observable<OfficerInfo> getOfficerDataObservable(OfficerInfo officerInfo){
+		return Observable.just(officerInfo);
+	}
+
+	private Observable<OfficerInfo> getOperatorOfficerDatafromDBObservable(final String id){
+		return Observable
+				.just(id)
+				.map(new Func1<String, OfficerInfo>() {
+					@Override
+					public OfficerInfo call(String s) {
+						OfficerInfo officerInfo = null;
+						try{
+							officerInfo = SQLiteOperation.selectPersonByID(mSqLiteDatabase,id);
+						}catch (Exception e){
+							e.printStackTrace();
+						}
+						return officerInfo;
+					}
+				});
+	}
+
+	private Observable<OfficerInfo> getOperatorOfficerDatafromNetObservable(String id){
+		return Observable
+				.just(id)
+				//Retrofit2 Webservice Request officer data
+				.flatMap(new Func1<String, Observable<ResponseEnvelope>>() {
+					@Override
+					public Observable<ResponseEnvelope> call(String zjhm) {
+
+						Log.d(TAG, "网络获取人员信息");
+
 						RequestXml requestXml = new RequestXml();
-						requestXml.xml = "<WS><SERVICE NAME=\"#EAIOS_JYXX\" XLH=\"K2zMnha3X2IbU9j+puXZI4SmZwNw==\"><INPARAM><DWBM TYPE=\"STRING\">520000111</DWBM><ZJHM TYPE=\"STRING\">123456789123456789</ZJHM></INPARAM></SERVICE></WS>";
+						requestXml.xml = "<WS><SERVICE NAME=\"#EAIOS_JYXX\" XLH=\"K2zMnha3X2IbU9j+puXZI4SmZwNw==\"><INPARAM><DWBM TYPE=\"STRING\">520000111</DWBM><ZJHM TYPE=\"STRING\">444</ZJHM></INPARAM></SERVICE></WS>";
 
 						com.elane.wjgjcrygl.retrofit.person_info.request.RequestBody requestbody = new com.elane.wjgjcrygl.retrofit.person_info.request.RequestBody();
 						requestbody.requestXml = requestXml;
 
-						com.elane.wjgjcrygl.retrofit.person_info.request.RequestEnvelope requestEnvelope = new com.elane.wjgjcrygl.retrofit.person_info.request.RequestEnvelope();
+						RequestEnvelope requestEnvelope = new RequestEnvelope();
 						requestEnvelope.requestBodyNode = requestbody;
 
 						return PersonInfoRetrofitGenerator.getWebserviceInterfaceApi().webRequestPersonInfo(requestEnvelope);
 					}
 				})
-				.map(new Func1<com.elane.wjgjcrygl.retrofit.person_info.response.ResponseEnvelope, String>() {
+				//Gain Webservice Response
+				.map(new Func1<ResponseEnvelope, String>() {
 					@Override
-					public String call(com.elane.wjgjcrygl.retrofit.person_info.response.ResponseEnvelope response) {
+					public String call(ResponseEnvelope response) {
 
-						Log.d(TAG, "call: 获得响应");
+						ResponseEnvelope responseEnvelope = response;
+						String result = responseEnvelope.body.returnNode.result;
 
-						com.elane.wjgjcrygl.retrofit.person_info.response.ResponseEnvelope responseEnvelope = response;
-						WebServiceResponse webserviceResponse = responseEnvelope.body.returnNode.result;
-						Log.d(TAG, "call: "+webserviceResponse.toString());
-						return webserviceResponse.toString();
+						// TODO: 2017/2/14 类型转换错误
+						/***
+						 * Error: org.simpleframework.xml.core.ValueRequiredException: Unable to satisfy @org.simpleframework.xml.Element(data=false, name=SERVICE, required=true, type=void) on field 'serviceNode' public com.elane.wjgjcrygl.retrofit.person_info.response.WebServiceService com.elane.wjgjcrygl.retrofit.person_info.response.WebServiceResponse.serviceNode for class com.elane.wjgjcrygl.retrofit.person_info.response.WebServiceResponse at line 1
+						 * 这里暂时手动解析
+						 */
+
+						Log.d(TAG, "得到人员信息响应:"+result.toString());
+						return result.toString();
 					}
 				})
-				.subscribe(new Subscriber<String>() {
+				//解析Officer Data xml Response
+				.map(new Func1<String, OfficerInfo>() {
 					@Override
-					public void onCompleted() {
-						Log.d(TAG, "onCompleted: ");
-					}
+					public OfficerInfo call(String responseXml) {
+						OfficerInfo officerInfo = null;
+						Persister persister = new Persister();
 
-					@Override
-					public void onError(Throwable e) {
-						Log.d(TAG, "onError: "+e.getMessage());
-						try{
-							mCamera.startPreview();
-							mSurfaceView.destroyDrawingCache();
-							mCamera.setPreviewCallback(previewCallback);
-						}catch (Exception e1){
-							e1.printStackTrace();
+						try {
+							WebServiceResponse response = persister.read(WebServiceResponse.class,responseXml);
+							officerInfo = response.serviceNode.resultNode.dataNode;
+						} catch (Exception e) {
+							e.printStackTrace();
+							authenticationSubscriber.onError(e);
+						}
+						if(officerInfo==null){
+							Log.d(TAG, "解析人员信息失败");
+						}else{
+							Log.d(TAG, "解析得到人员信息："+officerInfo.toString());
 						}
 
-						isFPMatching = false;
+						return officerInfo;
 					}
-
+				})
+				//信息缓存到本地
+				.doOnNext(new Action1<OfficerInfo>() {
 					@Override
-					public void onNext(String s) {
-						Log.d(TAG, "onNext: "+s);
+					public void call(OfficerInfo officerInfo) {
+						SQLiteOperation.replacePersonInfo(mSqLiteDatabase,officerInfo);
 					}
 				});
 	}
+
+	private Subscriber<OfficerInfo> operatorOfficerDataSubscriber = new Subscriber<OfficerInfo>() {
+		@Override
+		public void onCompleted() {
+			Log.d(TAG, "getOperatorOfficerDataSubscriber.onCompleted");
+		}
+
+		@Override
+		public void onError(Throwable e) {
+			Log.d(TAG, "getOperatorOfficerDataSubscriber.onError:"+e.getMessage());
+		}
+
+		@Override
+		public void onNext(OfficerInfo officerInfo) {
+			Log.d(TAG, "getOperatorOfficerDataSubscriber.onNext:"+officerInfo.toString());
+		}
+	};
+
+	private Subscriber<OfficerInfo> authenticationSubscriber = new Subscriber<OfficerInfo>() {
+		@Override
+		public void onCompleted() {
+			Log.d(TAG, "-------------------------- authenticationSubscriber.onCompleted --------------------------------");
+			isFPMatching = false;
+			if(mLoadingDialog.isShowing()){
+				mLoadingDialog.dismiss();
+			}
+		}
+
+		@Override
+		public void onError(Throwable e) {
+			MyApplication.gLogger.info("MainActivity.authenticationSubscriber.onError:"+e.getMessage());
+			Toast.makeText(mContext, "身份验证失败\n异常："+e.getMessage(), Toast.LENGTH_SHORT).show();
+			isFPMatching = false;
+			if(mLoadingDialog.isShowing()){
+				mLoadingDialog.dismiss();
+			}
+			if(!authenticationSubscriber.isUnsubscribed()){
+				authenticationSubscriber.unsubscribe();
+			}
+			authenticationObservable = getAuthenticationObservable();
+		}
+
+		@Override
+		public void onNext(OfficerInfo s) {
+			Log.d(TAG, "-------------------------- 本次验证成功，本次验证结束:"+s.toString() +" --------------------------------");
+			isFPMatching = false;
+			if(mLoadingDialog.isShowing()){
+				mLoadingDialog.dismiss();
+			}
+			mLoadingDialog.show();
+			Toast.makeText(mContext, "身份验证成功", Toast.LENGTH_SHORT).show();
+		}
+	};
 
 	@Override
 	public void surfaceChanged(SurfaceHolder arg0, int arg1, int arg2, int arg3) {
@@ -711,6 +900,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 	}
 
 	@Override
+	protected void onStop() {
+		super.onStop();
+		// 界面销毁时，关闭相机
+		if (mCamera != null) {
+			mCamera.setPreviewCallback(null);
+			mCamera.stopPreview();
+			mCamera.release();
+			mCamera = null;
+		}
+	}
+
+	@Override
 	protected void onDestroy() {
 		super.onDestroy();
 		if(screenControlObservable.isUnsubscribed()){
@@ -720,13 +921,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 			authenticationObservable.unsubscribe();
 		}
 
-		// 界面销毁时，关闭相机
-		if (mCamera != null) {
-			mCamera.setPreviewCallback(null);
-			mCamera.stopPreview();
-			mCamera.release();
-			mCamera = null;
-		}
 	}
 
 	@Override

@@ -8,5 +8,6 @@ import org.simpleframework.xml.Root;
  */
 @Root(name = "WS")
 public class WebServiceResponse {
-    @Element(name = "SERVICE") public WebServiceService serviceNode;
+
+    @Element(name = "SERVICE",required = false) public WebServiceService serviceNode;
 }

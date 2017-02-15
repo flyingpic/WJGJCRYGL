@@ -19,5 +19,5 @@ import org.simpleframework.xml.Root;
 
 @Root(name = "ResolveXmlResponse")
 public class ResponseReturn {
-    @Element(name = "return") public WebServiceResponse result;
+    @Element(name = "return",required = false) public String result;
 }

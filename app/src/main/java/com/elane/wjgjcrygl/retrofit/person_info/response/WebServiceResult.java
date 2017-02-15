@@ -1,5 +1,7 @@
 package com.elane.wjgjcrygl.retrofit.person_info.response;
 
+import com.elane.wjgjcrygl.model.OfficerInfo;
+
 import org.simpleframework.xml.Attribute;
 import org.simpleframework.xml.Element;
 import org.simpleframework.xml.Root;
@@ -9,8 +11,8 @@ import org.simpleframework.xml.Root;
  */
 @Root(name = "RESULT")
 public class WebServiceResult {
+    @Attribute(name = "STATUS",required = false) public String status;
 
-    @Attribute(name = "NAME") public String serviceName;
-
-    @Element(name = "DATA_LIST") public WebServiceDateList dateListNode;
+    @Attribute(name = "MSG",required = false,empty = "") public String msg;
+    @Element(name = "DATA",required = false) public OfficerInfo dataNode;
 }
